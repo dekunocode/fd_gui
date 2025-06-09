@@ -144,7 +144,7 @@ class FdSearchApp(ttk.Window):
         ttk.Checkbutton(check_frame, text="隠しファイル", variable=self.include_hidden_var, bootstyle="round-toggle").pack(side=LEFT, padx=10)
 
         self.case_sensitive_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(check_frame, text="大/小を区別", variable=self.case_sensitive_var, bootstyle="round-toggle").pack(side=LEFT, padx=10)
+        ttk.Checkbutton(check_frame, text="大文字/小文字を区別", variable=self.case_sensitive_var, bootstyle="round-toggle").pack(side=LEFT, padx=10)
 
     def create_results_widgets(self, parent):
         """検索結果を表示するリストボックスとスクロールバーを作成する。"""
