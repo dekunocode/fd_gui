@@ -7,8 +7,11 @@ APP_NAME = "fd ファイル検索ツール"
 APP_VERSION = "1.1.0"
 SCRIPT_FILE = "main.py"
 APP_DESCRIPTION = "A simple GUI wrapper for the 'fd' command."
+APP_COPYRIGHT = "Copyright (C) 2025"
 ICON_FILE = "icon/icon.ico"
-
+EXE_FILE_NAME = "fd ファイル検索ツール.exe"
+SHORTCUT_NAME = "fd ファイル検索ツール"
+SHORTCUT_DIR = "DesktopFolder"
 
 # --- ビルドオプション ---
 
@@ -56,5 +59,15 @@ setup(
     version=APP_VERSION,
     description=APP_DESCRIPTION,
     options={"build_exe": build_exe_options},
-    executables=executables
+    executables=[
+        Executable(
+            script=SCRIPT_FILE,
+            base=base,
+            copyright=APP_COPYRIGHT,
+            icon=ICON_FILE,
+            target_name=EXE_FILE_NAME,
+            shortcut_name=SHORTCUT_NAME,
+            shortcut_dir=SHORTCUT_DIR
+        )
+    ]
 )
