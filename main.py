@@ -8,7 +8,7 @@ import os
 import platform
 import sys
 import time
-import json # ★ 追加
+import json
 from collections import deque
 
 def resource_path(relative_path: str) -> str:
@@ -24,8 +24,6 @@ def resource_path(relative_path: str) -> str:
 class FdSearchApp(ttk.Window):
     """fdコマンドのGUIラッパーアプリケーションのメインウィンドウクラス。"""
 
-    # ★★★★★ ここからが変更箇所 ★★★★★
-
     def __init__(self):
         self.settings_file = resource_path('settings.json')
         settings = self.load_settings()
@@ -33,13 +31,15 @@ class FdSearchApp(ttk.Window):
 
         super().__init__(themename=initial_theme)
         self.title("fd ファイル検索ツール")
-        self.geometry("800x630")
+        self.geometry("800x750")
 
         # --- インスタンス変数 ---
         self.search_process = None
         self.results_queue = deque()
         self.update_job = None
         self.found_count = 0
+        self.all_results = []
+        self.displayed_results = []
 
         # --- ウィジェットの作成 ---
         self.set_icon()
@@ -51,7 +51,6 @@ class FdSearchApp(ttk.Window):
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def load_settings(self) -> dict:
-        """設定ファイル(settings.json)を読み込む。"""
         if not os.path.exists(self.settings_file):
             return {}
         try:
@@ -62,12 +61,12 @@ class FdSearchApp(ttk.Window):
             return {}
 
     def save_settings(self):
-        """現在の設定を設定ファイル(settings.json)に保存する。"""
         settings_data = {
             'theme': self.style.theme.name,
             'folder': self.folder_var.get(),
             'hidden': self.include_hidden_var.get(),
             'case_sensitive': self.case_sensitive_var.get(),
+            'type': self.type_var.get(), # ★ 追加: 検索タイプを保存
         }
         try:
             with open(self.settings_file, 'w', encoding='utf-8') as f:
@@ -76,18 +75,15 @@ class FdSearchApp(ttk.Window):
             print(f"設定ファイルを保存できませんでした: {e}")
 
     def apply_settings(self, settings: dict):
-        """読み込んだ設定をUIに適用する。"""
         self.folder_var.set(settings.get('folder', ''))
         self.include_hidden_var.set(settings.get('hidden', False))
         self.case_sensitive_var.set(settings.get('case_sensitive', False))
+        self.type_var.set(settings.get('type', 'all')) # ★ 追加: 検索タイプを読み込み
         self.on_keyword_change()
 
     def on_closing(self):
-        """ウィンドウが閉じられるときに設定を保存して終了する。"""
         self.save_settings()
         self.destroy()
-
-    # ★★★★★ ここまでが変更箇所 ★★★★★
 
     def set_icon(self):
         icon_path = resource_path('icon/icon.ico')
@@ -147,18 +143,69 @@ class FdSearchApp(ttk.Window):
         ttk.Checkbutton(check_frame, text="大文字/小文字を区別", variable=self.case_sensitive_var, bootstyle="round-toggle").pack(side=LEFT, padx=10)
 
     def create_results_widgets(self, parent):
-        result_frame = ttk.Frame(parent)
+        result_frame = ttk.LabelFrame(parent, text="検索結果", padding=10)
         result_frame.pack(fill=BOTH, expand=True)
-        x_scrollbar = ttk.Scrollbar(result_frame, orient=HORIZONTAL, bootstyle="round")
+
+        filter_frame = ttk.Frame(result_frame)
+        filter_frame.pack(fill=X, pady=(0, 5))
+        ttk.Label(filter_frame, text="あいまい検索で絞り込み:").pack(side=LEFT, padx=(0,5))
+        self.filter_var = tk.StringVar()
+        self.filter_entry = ttk.Entry(filter_frame, textvariable=self.filter_var)
+        self.filter_entry.pack(fill=X, expand=True)
+        self.filter_entry.bind("<Return>", self.filter_results)
+
+        list_frame = ttk.Frame(result_frame)
+        list_frame.pack(fill=BOTH, expand=True)
+        x_scrollbar = ttk.Scrollbar(list_frame, orient=HORIZONTAL, bootstyle="round")
         x_scrollbar.pack(side=BOTTOM, fill=X)
-        y_scrollbar = ttk.Scrollbar(result_frame, orient=VERTICAL, bootstyle="round")
+        y_scrollbar = ttk.Scrollbar(list_frame, orient=VERTICAL, bootstyle="round")
         y_scrollbar.pack(side=RIGHT, fill=Y)
-        self.result_listbox = tk.Listbox(result_frame, xscrollcommand=x_scrollbar.set, yscrollcommand=y_scrollbar.set)
+        self.result_listbox = tk.Listbox(list_frame, xscrollcommand=x_scrollbar.set, yscrollcommand=y_scrollbar.set)
         self.result_listbox.pack(side=LEFT, fill=BOTH, expand=True)
         x_scrollbar.config(command=self.result_listbox.xview)
         y_scrollbar.config(command=self.result_listbox.yview)
         self.result_listbox.bind("<Double-Button-1>", self.open_selected_path)
         self.result_listbox.bind("<Button-3>", self.show_context_menu)
+
+    def get_selected_absolute_path(self) -> str | None:
+        selection_indices = self.result_listbox.curselection()
+        if not selection_indices:
+            return None
+        selected_index = selection_indices[0]
+        if selected_index < len(self.displayed_results):
+            return self.displayed_results[selected_index][0]
+        return None
+
+    def fuzzy_match(self, query: str, target: str) -> bool:
+        query = query.lower()
+        target = target.lower()
+        query_idx = 0
+        target_idx = 0
+        while query_idx < len(query) and target_idx < len(target):
+            if query[query_idx] == target[target_idx]:
+                query_idx += 1
+            target_idx += 1
+        return query_idx == len(query)
+
+    def filter_results(self, event=None):
+        query = self.filter_var.get()
+        self.result_listbox.delete(0, "end")
+
+        if not query:
+            self.displayed_results = self.all_results[:]
+        else:
+            self.displayed_results = [item for item in self.all_results if self.fuzzy_match(query, item[1])]
+
+        if not self.displayed_results:
+            self.result_listbox.insert("end", "（検索結果なし）")
+            self.status_var.set(f"✅ 絞り込みの結果、0件です")
+        else:
+            relative_paths = [item[1] for item in self.displayed_results]
+            self.result_listbox.insert("end", *relative_paths)
+            if not query:
+                 self.status_var.set(f"✅ 全 {len(self.all_results)} 件を表示中 (Enterで絞り込み)")
+            else:
+                 self.status_var.set(f"✅ {len(self.displayed_results)} 件に絞り込みました (Enterで再度絞り込み)")
 
     def create_statusbar(self):
         status_frame = ttk.Frame(self, padding=(5, 2))
@@ -190,11 +237,21 @@ class FdSearchApp(ttk.Window):
 
     def start_search(self, event=None):
         if self.search_button["state"] == "disabled": return
+
+        if not os.path.isdir(self.folder_var.get()):
+            messagebox.showerror("エラー", "指定された検索フォルダは存在しません。")
+            return
+
         self.search_button.config(state=DISABLED, text="検索中...")
         self.status_var.set("🔍 検索中...")
         self.found_count_var.set("")
         self.time_var.set("")
+
         self.result_listbox.delete(0, "end")
+        self.filter_var.set("")
+        self.all_results.clear()
+        self.displayed_results.clear()
+
         self.update_idletasks()
         self.results_queue.clear()
         self.found_count = 0
@@ -206,19 +263,19 @@ class FdSearchApp(ttk.Window):
         folder = self.folder_var.get()
         keyword = self.keyword_var.get().strip()
         fd_path = resource_path("fd.exe") if platform.system() == "Windows" else "fd"
-        if not os.path.isdir(folder):
-            self.results_queue.append(("error", "検索フォルダが存在しません。"))
-            return
+
         if not keyword:
             self.results_queue.append(("error", "検索キーワードを入力してください。"))
             return
         if platform.system() == "Windows" and not os.path.isfile(fd_path):
             self.results_queue.append(("error", f"'{os.path.basename(fd_path)}' が見つかりません。"))
             return
+
         cmd = [fd_path, keyword, folder, "--absolute-path"]
         if self.type_var.get() in ("f", "d"): cmd += ["-t", self.type_var.get()]
         if self.include_hidden_var.get(): cmd.append("--hidden")
         cmd.append("--case-sensitive" if self.case_sensitive_var.get() else "--ignore-case")
+
         try:
             creation_flags = subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
             self.search_process = subprocess.Popen(
@@ -226,9 +283,10 @@ class FdSearchApp(ttk.Window):
                 text=True, encoding="utf-8", errors='ignore', creationflags=creation_flags
             )
             for line in iter(self.search_process.stdout.readline, ''):
-                path = line.strip()
-                if path:
-                    self.results_queue.append(("path", path))
+                abs_path = line.strip()
+                if abs_path:
+                    rel_path = os.path.relpath(abs_path, folder)
+                    self.results_queue.append(("path", (abs_path, rel_path)))
             self.search_process.wait()
             stderr_output = self.search_process.stderr.read()
             if self.search_process.returncode not in (0, 1) and stderr_output:
@@ -257,8 +315,9 @@ class FdSearchApp(ttk.Window):
                 is_done = True
                 break
         if items_to_add:
-            for item in items_to_add:
-                self.result_listbox.insert("end", item)
+            relative_paths = [item[1] for item in items_to_add]
+            self.result_listbox.insert("end", *relative_paths)
+            self.all_results.extend(items_to_add)
             self.found_count += len(items_to_add)
             self.found_count_var.set(f"{self.found_count} 件")
         if error_msg:
@@ -270,17 +329,20 @@ class FdSearchApp(ttk.Window):
         self.update_job = self.after(300, self.periodic_gui_updater)
 
     def finalize_search(self):
+        self.displayed_results = self.all_results[:]
         elapsed_time = time.time() - self.search_start_time
         if self.found_count == 0:
             self.result_listbox.insert("end", "一致するファイルは見つかりませんでした。")
             self.status_var.set("✅ 検索完了")
         else:
-            self.status_var.set("✅ 検索完了")
+            self.status_var.set(f"✅ 検索完了 (Enterで結果を絞り込めます)")
         self.found_count_var.set(f"{self.found_count} 件")
         self.time_var.set(f"({elapsed_time:.2f}秒)")
         self.on_keyword_change()
         self.search_button.config(text="検索開始")
         self.change_theme(self.style.theme.name)
+        if self.found_count > 0:
+             self.filter_entry.focus_set()
 
     def show_error(self, msg: str):
         messagebox.showerror("エラー", msg)
@@ -305,6 +367,7 @@ class FdSearchApp(ttk.Window):
             self.on_keyword_change()
 
     def show_context_menu(self, event):
+        if self.result_listbox.size() == 0 or self.result_listbox.get(0).startswith("（"): return
         selection_idx = self.result_listbox.nearest(event.y)
         if not self.result_listbox.selection_includes(selection_idx):
             self.result_listbox.selection_clear(0, 'end')
@@ -317,36 +380,31 @@ class FdSearchApp(ttk.Window):
                 self.context_menu.grab_release()
 
     def open_file_location(self):
-        """選択したファイルの格納場所をOSのファイルエクスプローラーで開く。"""
-        selection = self.result_listbox.curselection()
-        if not selection: return
-        path = self.result_listbox.get(selection[0])
+        path = self.get_selected_absolute_path()
+        if not path: return
         if not os.path.exists(path):
             messagebox.showwarning("警告", "選択されたパスは存在しません。"); return
         try:
             if platform.system() == "Windows":
                 subprocess.run(['explorer', '/select,', os.path.normpath(path)])
-            elif platform.system() == "Darwin": # macOS
+            elif platform.system() == "Darwin":
                 subprocess.run(['open', '-R', path])
-            else: # Linux
+            else:
                 dir_path = os.path.dirname(path) if os.path.isfile(path) else path
                 subprocess.run(['xdg-open', dir_path])
         except Exception as e:
             messagebox.showerror("エラー", f"場所を開けませんでした: {e}")
 
     def copy_path_to_clipboard(self):
-        selection = self.result_listbox.curselection()
-        if not selection: return
-        path = self.result_listbox.get(selection[0])
+        path = self.get_selected_absolute_path()
+        if not path: return
         self.clipboard_clear()
         self.clipboard_append(path)
         self.status_var.set(f"📋 パスをコピーしました: {path}")
 
     def open_selected_path(self, event=None):
-        """選択したアイテムをOSのデフォルトアプリケーションで開く（ダブルクリック時の動作）。"""
-        selection = self.result_listbox.curselection()
-        if not selection: return
-        path = self.result_listbox.get(selection[0])
+        path = self.get_selected_absolute_path()
+        if not path: return
         if not os.path.exists(path):
             messagebox.showwarning("警告", "選択されたパスは存在しません。"); return
         try:
@@ -358,6 +416,5 @@ class FdSearchApp(ttk.Window):
             messagebox.showerror("エラー", f"ファイル/フォルダを開けませんでした: {e}")
 
 if __name__ == "__main__":
-    # ★ 変更: コンストラクタからテーマ指定を削除。設定ファイルから読み込むため。
     app = FdSearchApp()
     app.mainloop()
