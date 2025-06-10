@@ -8,6 +8,7 @@ import os
 import platform
 import sys
 import time
+import json # ★ 追加
 from collections import deque
 
 def resource_path(relative_path: str) -> str:
@@ -23,8 +24,14 @@ def resource_path(relative_path: str) -> str:
 class FdSearchApp(ttk.Window):
     """fdコマンドのGUIラッパーアプリケーションのメインウィンドウクラス。"""
 
-    def __init__(self, themename: str = 'superhero'):
-        super().__init__(themename=themename)
+    # ★★★★★ ここからが変更箇所 ★★★★★
+
+    def __init__(self):
+        self.settings_file = resource_path('settings.json')
+        settings = self.load_settings()
+        initial_theme = settings.get('theme', 'superhero')
+
+        super().__init__(themename=initial_theme)
         self.title("fd ファイル検索ツール")
         self.geometry("800x630")
 
@@ -38,6 +45,49 @@ class FdSearchApp(ttk.Window):
         self.set_icon()
         self.create_context_menu()
         self.create_widgets()
+
+        # --- 設定の適用と終了処理 ---
+        self.apply_settings(settings)
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+    def load_settings(self) -> dict:
+        """設定ファイル(settings.json)を読み込む。"""
+        if not os.path.exists(self.settings_file):
+            return {}
+        try:
+            with open(self.settings_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except (IOError, json.JSONDecodeError) as e:
+            print(f"設定ファイルを読み込めませんでした: {e}")
+            return {}
+
+    def save_settings(self):
+        """現在の設定を設定ファイル(settings.json)に保存する。"""
+        settings_data = {
+            'theme': self.style.theme.name,
+            'folder': self.folder_var.get(),
+            'hidden': self.include_hidden_var.get(),
+            'case_sensitive': self.case_sensitive_var.get(),
+        }
+        try:
+            with open(self.settings_file, 'w', encoding='utf-8') as f:
+                json.dump(settings_data, f, indent=4, ensure_ascii=False)
+        except IOError as e:
+            print(f"設定ファイルを保存できませんでした: {e}")
+
+    def apply_settings(self, settings: dict):
+        """読み込んだ設定をUIに適用する。"""
+        self.folder_var.set(settings.get('folder', ''))
+        self.include_hidden_var.set(settings.get('hidden', False))
+        self.case_sensitive_var.set(settings.get('case_sensitive', False))
+        self.on_keyword_change()
+
+    def on_closing(self):
+        """ウィンドウが閉じられるときに設定を保存して終了する。"""
+        self.save_settings()
+        self.destroy()
+
+    # ★★★★★ ここまでが変更箇所 ★★★★★
 
     def set_icon(self):
         icon_path = resource_path('icon/icon.ico')
@@ -275,13 +325,12 @@ class FdSearchApp(ttk.Window):
             messagebox.showwarning("警告", "選択されたパスは存在しません。"); return
         try:
             if platform.system() == "Windows":
-                # subprocess.runのcheck=Trueを削除。explorer.exeが返す終了コード1をエラーとして扱わない
                 subprocess.run(['explorer', '/select,', os.path.normpath(path)])
             elif platform.system() == "Darwin": # macOS
-                subprocess.run(['open', '-R', path]) # check=Trueを削除
+                subprocess.run(['open', '-R', path])
             else: # Linux
                 dir_path = os.path.dirname(path) if os.path.isfile(path) else path
-                subprocess.run(['xdg-open', dir_path]) # check=Trueを削除
+                subprocess.run(['xdg-open', dir_path])
         except Exception as e:
             messagebox.showerror("エラー", f"場所を開けませんでした: {e}")
 
@@ -304,11 +353,11 @@ class FdSearchApp(ttk.Window):
             if platform.system() == "Windows":
                 os.startfile(os.path.normpath(path))
             else:
-                 # ここもcheck=Trueを削除
                  subprocess.run(['open' if platform.system() == "Darwin" else 'xdg-open', path])
         except Exception as e:
             messagebox.showerror("エラー", f"ファイル/フォルダを開けませんでした: {e}")
 
 if __name__ == "__main__":
-    app = FdSearchApp(themename="solar")
+    # ★ 変更: コンストラクタからテーマ指定を削除。設定ファイルから読み込むため。
+    app = FdSearchApp()
     app.mainloop()
