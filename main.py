@@ -10,6 +10,7 @@ import sys
 import time
 import json
 from collections import deque
+from datetime import datetime
 
 def resource_path(relative_path: str) -> str:
     """
@@ -26,6 +27,7 @@ class FdSearchApp(ttk.Window):
 
     def __init__(self):
         self.settings_file = resource_path('settings.json')
+        self.history_dir = resource_path('history')
         settings = self.load_settings()
         initial_theme = settings.get('theme', 'superhero')
 
@@ -66,7 +68,7 @@ class FdSearchApp(ttk.Window):
             'folder': self.folder_var.get(),
             'hidden': self.include_hidden_var.get(),
             'case_sensitive': self.case_sensitive_var.get(),
-            'type': self.type_var.get(), # ★ 追加: 検索タイプを保存
+            'type': self.type_var.get(),
         }
         try:
             with open(self.settings_file, 'w', encoding='utf-8') as f:
@@ -78,7 +80,7 @@ class FdSearchApp(ttk.Window):
         self.folder_var.set(settings.get('folder', ''))
         self.include_hidden_var.set(settings.get('hidden', False))
         self.case_sensitive_var.set(settings.get('case_sensitive', False))
-        self.type_var.set(settings.get('type', 'all')) # ★ 追加: 検索タイプを読み込み
+        self.type_var.set(settings.get('type', 'all'))
         self.on_keyword_change()
 
     def on_closing(self):
@@ -109,6 +111,94 @@ class FdSearchApp(ttk.Window):
         self.search_button.config(state=DISABLED)
         self.create_results_widgets(main_frame)
         self.create_statusbar()
+
+    def create_menu(self):
+        menubar = ttk.Menu(self)
+        self.config(menu=menubar)
+
+        # ★ ファイルメニューを追加
+        file_menu = ttk.Menu(menubar, tearoff=False)
+        file_menu.add_command(label="終了", command=self.on_closing)
+        menubar.add_cascade(label="ファイル", menu=file_menu)
+
+        self.history_menu = ttk.Menu(menubar, tearoff=False)
+        self.history_menu.add_command(label="現在の検索結果を保存", command=self.save_history, state="disabled")
+        self.history_menu.add_command(label="履歴ファイルを開く", command=self.load_history)
+        menubar.add_cascade(label="履歴", menu=self.history_menu)
+
+        theme_menu = ttk.Menu(menubar, tearoff=False)
+        menubar.add_cascade(label="テーマ切替", menu=theme_menu)
+        for theme in self.style.theme_names():
+            theme_menu.add_radiobutton(label=theme, command=lambda t=theme: self.change_theme(t))
+
+    def save_history(self):
+        if not self.all_results:
+            messagebox.showinfo("情報", "保存する検索結果がありません。")
+            return
+
+        history_data = {
+            "saved_at": datetime.now().isoformat(),
+            "search_folder": self.folder_var.get(),
+            "keyword": self.keyword_var.get(),
+            "options": {
+                "type": self.type_var.get(),
+                "hidden": self.include_hidden_var.get(),
+                "case_sensitive": self.case_sensitive_var.get(),
+            },
+            "results": self.all_results
+        }
+
+        if not os.path.exists(self.history_dir):
+            os.makedirs(self.history_dir)
+
+        filename = datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + ".json"
+        filepath = os.path.join(self.history_dir, filename)
+
+        try:
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(history_data, f, indent=4, ensure_ascii=False)
+            self.status_var.set(f"✅ 履歴を保存しました: {filename}")
+        except Exception as e:
+            messagebox.showerror("エラー", f"履歴の保存に失敗しました: {e}")
+
+    def load_history(self):
+        filepath = filedialog.askopenfilename(
+            title="履歴ファイルを開く",
+            initialdir=self.history_dir,
+            filetypes=[("JSONファイル", "*.json")]
+        )
+        if not filepath:
+            return
+
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                history_data = json.load(f)
+
+            self.folder_var.set(history_data.get("search_folder", ""))
+            self.keyword_var.set(history_data.get("keyword", ""))
+
+            options = history_data.get("options", {})
+            self.type_var.set(options.get("type", "all"))
+            self.include_hidden_var.set(options.get("hidden", False))
+            self.case_sensitive_var.set(options.get("case_sensitive", False))
+
+            self.all_results = history_data.get("results", [])
+            self.displayed_results = self.all_results[:]
+
+            self.result_listbox.delete(0, "end")
+            relative_paths = [item[1] for item in self.all_results]
+            self.result_listbox.insert("end", *relative_paths)
+
+            self.found_count = len(self.all_results)
+            self.found_count_var.set(f"{self.found_count} 件")
+            self.time_var.set(f"(履歴: {os.path.basename(filepath)})")
+
+            self.status_var.set(f"✅ 履歴を読み込みました (Enterで結果を絞り込めます)")
+            self.filter_entry.focus_set()
+            self.history_menu.entryconfig("現在の検索結果を保存", state="normal")
+
+        except Exception as e:
+            messagebox.showerror("エラー", f"履歴の読み込みに失敗しました: {e}")
 
     def create_settings_widgets(self, parent):
         settings_frame = ttk.Frame(parent)
@@ -222,14 +312,6 @@ class FdSearchApp(ttk.Window):
         self.found_count_label = ttk.Label(right_frame, textvariable=self.found_count_var)
         self.found_count_label.pack(side=RIGHT)
 
-    def create_menu(self):
-        menubar = ttk.Menu(self)
-        self.config(menu=menubar)
-        theme_menu = ttk.Menu(menubar, tearoff=False)
-        menubar.add_cascade(label="テーマ切替", menu=theme_menu)
-        for theme in self.style.theme_names():
-            theme_menu.add_radiobutton(label=theme, command=lambda t=theme: self.change_theme(t))
-
     def change_theme(self, theme_name: str):
         self.style.theme_use(theme_name)
         select_bg = self.style.colors.selectbg
@@ -242,6 +324,7 @@ class FdSearchApp(ttk.Window):
             messagebox.showerror("エラー", "指定された検索フォルダは存在しません。")
             return
 
+        self.history_menu.entryconfig("現在の検索結果を保存", state="disabled")
         self.search_button.config(state=DISABLED, text="検索中...")
         self.status_var.set("🔍 検索中...")
         self.found_count_var.set("")
@@ -334,8 +417,11 @@ class FdSearchApp(ttk.Window):
         if self.found_count == 0:
             self.result_listbox.insert("end", "一致するファイルは見つかりませんでした。")
             self.status_var.set("✅ 検索完了")
+            self.history_menu.entryconfig("現在の検索結果を保存", state="disabled")
         else:
             self.status_var.set(f"✅ 検索完了 (Enterで結果を絞り込めます)")
+            self.history_menu.entryconfig("現在の検索結果を保存", state="normal")
+
         self.found_count_var.set(f"{self.found_count} 件")
         self.time_var.set(f"({elapsed_time:.2f}秒)")
         self.on_keyword_change()
