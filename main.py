@@ -116,7 +116,6 @@ class FdSearchApp(ttk.Window):
         menubar = ttk.Menu(self)
         self.config(menu=menubar)
 
-        # ★ ファイルメニューを追加
         file_menu = ttk.Menu(menubar, tearoff=False)
         file_menu.add_command(label="終了", command=self.on_closing)
         menubar.add_cascade(label="ファイル", menu=file_menu)
@@ -401,6 +400,7 @@ class FdSearchApp(ttk.Window):
             relative_paths = [item[1] for item in items_to_add]
             self.result_listbox.insert("end", *relative_paths)
             self.all_results.extend(items_to_add)
+            self.displayed_results.extend(items_to_add) # ★ 修正: displayed_resultsもリアルタイムで更新
             self.found_count += len(items_to_add)
             self.found_count_var.set(f"{self.found_count} 件")
         if error_msg:
