@@ -12,10 +12,72 @@ import json
 from collections import deque
 from datetime import datetime
 
+# --- Language translations ---
+translations = {
+    'en': {
+        'title': 'fd File Search Tool',
+        'search_folder': 'Search Folder:',
+        'browse': 'Browse',
+        'search_keyword': 'Search Keyword:',
+        'search_options': 'Search Options',
+        'all': 'All',
+        'file_only': 'Files Only',
+        'dir_only': 'Directories Only',
+        'hidden': 'Hidden Files',
+        'case_sensitive': 'Case Sensitive',
+        'start_search': 'Start Search',
+        'search_results': 'Search Results',
+        'fuzzy_filter': 'Fuzzy Filter:',
+        'status_ready': 'Please enter folder and keyword',
+        'status_searching': '🔍 Searching...',
+        'status_done': '✅ Search complete',
+        'status_no_results': 'No matching files found.',
+        'context_open': 'Open location in Explorer',
+        'context_copy': 'Copy path',
+        'menu_file': 'File',
+        'menu_exit': 'Exit',
+        'menu_history': 'History',
+        'menu_save_history': 'Save current search results',
+        'menu_open_history': 'Open history file',
+        'menu_theme': 'Theme',
+        'menu_language': 'Language',
+        'lang_en': 'English',
+        'lang_ja': '日本語',
+    },
+    'ja': {
+        'title': 'fd ファイル検索ツール',
+        'search_folder': '検索フォルダ:',
+        'browse': '参照',
+        'search_keyword': '検索キーワード:',
+        'search_options': '検索オプション',
+        'all': 'すべて',
+        'file_only': 'ファイルのみ',
+        'dir_only': 'ディレクトリのみ',
+        'hidden': '隠しファイル',
+        'case_sensitive': '大文字/小文字を区別',
+        'start_search': '検索開始',
+        'search_results': '検索結果',
+        'fuzzy_filter': 'あいまい検索で絞り込み:',
+        'status_ready': 'フォルダとキーワードを入力してください',
+        'status_searching': '🔍 検索中...',
+        'status_done': '✅ 検索完了',
+        'status_no_results': '一致するファイルは見つかりませんでした。',
+        'context_open': 'この場所をエクスプローラーで開く',
+        'context_copy': 'パスをコピー',
+        'menu_file': 'ファイル',
+        'menu_exit': '終了',
+        'menu_history': '履歴',
+        'menu_save_history': '現在の検索結果を保存',
+        'menu_open_history': '履歴ファイルを開く',
+        'menu_theme': 'テーマ切替',
+        'menu_language': '言語',
+        'lang_en': 'English',
+        'lang_ja': '日本語',
+    }
+}
+
+# Utility function to resolve resource file paths depending on the execution environment.
 def resource_path(relative_path: str) -> str:
-    """
-    実行環境に応じてリソースファイルへの絶対パスを解決して返す。
-    """
     try:
         base_path = sys._MEIPASS
     except AttributeError:
@@ -23,16 +85,17 @@ def resource_path(relative_path: str) -> str:
     return os.path.join(base_path, relative_path)
 
 class FdSearchApp(ttk.Window):
-    """fdコマンドのGUIラッパーアプリケーションのメインウィンドウクラス。"""
+    """Main window class for the fd command GUI wrapper application."""
 
     def __init__(self):
+        self.language = 'en'  # Default language
         self.settings_file = resource_path('settings.json')
         self.history_dir = resource_path('history')
         settings = self.load_settings()
         initial_theme = settings.get('theme', 'superhero')
 
         super().__init__(themename=initial_theme)
-        self.title("fd ファイル検索ツール")
+        self.title(translations[self.language]['title'])
         self.geometry("800x750")
 
         # --- インスタンス変数 ---
@@ -53,16 +116,18 @@ class FdSearchApp(ttk.Window):
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def load_settings(self) -> dict:
+        """Load application settings from the settings file (JSON)."""
         if not os.path.exists(self.settings_file):
             return {}
         try:
             with open(self.settings_file, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except (IOError, json.JSONDecodeError) as e:
-            print(f"設定ファイルを読み込めませんでした: {e}")
+            print(f"Could not load settings file: {e}")
             return {}
 
     def save_settings(self):
+        """Save current application settings to the settings file (JSON)."""
         settings_data = {
             'theme': self.style.theme.name,
             'folder': self.folder_var.get(),
@@ -74,7 +139,7 @@ class FdSearchApp(ttk.Window):
             with open(self.settings_file, 'w', encoding='utf-8') as f:
                 json.dump(settings_data, f, indent=4, ensure_ascii=False)
         except IOError as e:
-            print(f"設定ファイルを保存できませんでした: {e}")
+            print(f"Could not save settings file: {e}")
 
     def apply_settings(self, settings: dict):
         self.folder_var.set(settings.get('folder', ''))
@@ -88,17 +153,19 @@ class FdSearchApp(ttk.Window):
         self.destroy()
 
     def set_icon(self):
+        """Set the application icon if available."""
         icon_path = resource_path('icon/icon.ico')
         if os.path.exists(icon_path):
             try:
                 self.iconbitmap(icon_path)
             except Exception as e:
-                print(f"アイコンを設定できませんでした: {e}")
+                print(f"Could not set icon: {e}")
 
     def create_context_menu(self):
+        """Create the right-click context menu for result list."""
         self.context_menu = tk.Menu(self, tearoff=0)
-        self.context_menu.add_command(label="この場所をエクスプローラーで開く", command=self.open_file_location)
-        self.context_menu.add_command(label="パスをコピー", command=self.copy_path_to_clipboard)
+        self.context_menu.add_command(label=translations[self.language]['context_open'], command=self.open_file_location)
+        self.context_menu.add_command(label=translations[self.language]['context_copy'], command=self.copy_path_to_clipboard)
 
     def create_widgets(self):
         self.create_menu()
@@ -106,33 +173,65 @@ class FdSearchApp(ttk.Window):
         main_frame.pack(fill=BOTH, expand=True)
         self.create_settings_widgets(main_frame)
         self.create_options_widgets(main_frame)
-        self.search_button = ttk.Button(main_frame, text="検索開始", command=self.start_search, bootstyle=(SUCCESS, OUTLINE))
+        self.search_button = ttk.Button(main_frame, text=translations[self.language]['start_search'], command=self.start_search, bootstyle=(SUCCESS, OUTLINE))
         self.search_button.pack(fill=X, pady=10, ipady=5)
         self.search_button.config(state=DISABLED)
         self.create_results_widgets(main_frame)
         self.create_statusbar()
 
     def create_menu(self):
+        """Create the application menu bar."""
         menubar = ttk.Menu(self)
         self.config(menu=menubar)
 
         file_menu = ttk.Menu(menubar, tearoff=False)
-        file_menu.add_command(label="終了", command=self.on_closing)
-        menubar.add_cascade(label="ファイル", menu=file_menu)
+        file_menu.add_command(label=translations[self.language]['menu_exit'], command=self.on_closing)
+        menubar.add_cascade(label=translations[self.language]['menu_file'], menu=file_menu)
 
         self.history_menu = ttk.Menu(menubar, tearoff=False)
-        self.history_menu.add_command(label="現在の検索結果を保存", command=self.save_history, state="disabled")
-        self.history_menu.add_command(label="履歴ファイルを開く", command=self.load_history)
-        menubar.add_cascade(label="履歴", menu=self.history_menu)
+        self.history_menu.add_command(label=translations[self.language]['menu_save_history'], command=self.save_history, state="disabled")
+        self.save_history_index = 0  # Save the index for later reference
+        self.history_menu.add_command(label=translations[self.language]['menu_open_history'], command=self.load_history)
+        menubar.add_cascade(label=translations[self.language]['menu_history'], menu=self.history_menu)
 
         theme_menu = ttk.Menu(menubar, tearoff=False)
-        menubar.add_cascade(label="テーマ切替", menu=theme_menu)
+        menubar.add_cascade(label=translations[self.language]['menu_theme'], menu=theme_menu)
         for theme in self.style.theme_names():
             theme_menu.add_radiobutton(label=theme, command=lambda t=theme: self.change_theme(t))
 
+        # Language menu
+        lang_menu = ttk.Menu(menubar, tearoff=False)
+        lang_menu.add_radiobutton(label=translations['en']['lang_en'], command=lambda: self.set_language('en'))
+        lang_menu.add_radiobutton(label=translations['ja']['lang_ja'], command=lambda: self.set_language('ja'))
+        menubar.add_cascade(label=translations[self.language]['menu_language'], menu=lang_menu)
+
+    def set_language(self, lang):
+        if lang not in translations:
+            return
+        self.language = lang
+        self.update_language()
+
+    def update_language(self):
+        # --- Save current entry values ---
+        folder_value = self.folder_var.get() if hasattr(self, 'folder_var') else ''
+        keyword_value = self.keyword_var.get() if hasattr(self, 'keyword_var') else ''
+        # Update window title and all widget labels
+        self.title(translations[self.language]['title'])
+        # Re-create all widgets and menus
+        for widget in self.winfo_children():
+            widget.destroy()
+        self.create_context_menu()
+        self.create_widgets()
+        # --- Restore entry values ---
+        if hasattr(self, 'folder_var'):
+            self.folder_var.set(folder_value)
+        if hasattr(self, 'keyword_var'):
+            self.keyword_var.set(keyword_value)
+
     def save_history(self):
+        """Save the current search results to a history file (JSON)."""
         if not self.all_results:
-            messagebox.showinfo("情報", "保存する検索結果がありません。")
+            messagebox.showinfo("Info", "No search results to save.")
             return
 
         history_data = {
@@ -156,15 +255,16 @@ class FdSearchApp(ttk.Window):
         try:
             with open(filepath, 'w', encoding='utf-8') as f:
                 json.dump(history_data, f, indent=4, ensure_ascii=False)
-            self.status_var.set(f"✅ 履歴を保存しました: {filename}")
+            self.status_var.set(f"✅ History saved: {filename}")
         except Exception as e:
-            messagebox.showerror("エラー", f"履歴の保存に失敗しました: {e}")
+            messagebox.showerror("Error", f"Failed to save history: {e}")
 
     def load_history(self):
+        """Load search results from a history file (JSON)."""
         filepath = filedialog.askopenfilename(
-            title="履歴ファイルを開く",
+            title=translations[self.language]['menu_open_history'],
             initialdir=self.history_dir,
-            filetypes=[("JSONファイル", "*.json")]
+            filetypes=[("JSON files", "*.json")]
         )
         if not filepath:
             return
@@ -189,26 +289,26 @@ class FdSearchApp(ttk.Window):
             self.result_listbox.insert("end", *relative_paths)
 
             self.found_count = len(self.all_results)
-            self.found_count_var.set(f"{self.found_count} 件")
-            self.time_var.set(f"(履歴: {os.path.basename(filepath)})")
+            self.found_count_var.set(f"{self.found_count} items")
+            self.time_var.set(f"(History: {os.path.basename(filepath)})")
 
-            self.status_var.set(f"✅ 履歴を読み込みました (Enterで結果を絞り込めます)")
+            self.status_var.set(f"✅ History loaded (Press Enter to filter results)")
             self.filter_entry.focus_set()
-            self.history_menu.entryconfig("現在の検索結果を保存", state="normal")
+            self.history_menu.entryconfig(self.save_history_index, state="normal")
 
         except Exception as e:
-            messagebox.showerror("エラー", f"履歴の読み込みに失敗しました: {e}")
+            messagebox.showerror("Error", f"Failed to load history: {e}")
 
     def create_settings_widgets(self, parent):
         settings_frame = ttk.Frame(parent)
         settings_frame.pack(fill=X, pady=(0, 10))
         settings_frame.columnconfigure(1, weight=1)
-        ttk.Label(settings_frame, text="検索フォルダ:").grid(row=0, column=0, padx=(0, 5), sticky=W)
+        ttk.Label(settings_frame, text=translations[self.language]['search_folder']).grid(row=0, column=0, padx=(0, 5), sticky=W)
         self.folder_var = tk.StringVar()
         folder_entry = ttk.Entry(settings_frame, textvariable=self.folder_var)
         folder_entry.grid(row=0, column=1, sticky=EW, padx=(0, 5))
-        ttk.Button(settings_frame, text="参照", command=self.browse_folder, bootstyle=SECONDARY).grid(row=0, column=2)
-        ttk.Label(settings_frame, text="検索キーワード:").grid(row=1, column=0, padx=(0, 5), pady=(5,0), sticky=W)
+        ttk.Button(settings_frame, text=translations[self.language]['browse'], command=self.browse_folder, bootstyle=SECONDARY).grid(row=0, column=2)
+        ttk.Label(settings_frame, text=translations[self.language]['search_keyword']).grid(row=1, column=0, padx=(0, 5), pady=(5,0), sticky=W)
         self.keyword_var = tk.StringVar()
         self.keyword_var.trace_add("write", self.on_keyword_change)
         keyword_entry = ttk.Entry(settings_frame, textvariable=self.keyword_var)
@@ -216,28 +316,28 @@ class FdSearchApp(ttk.Window):
         keyword_entry.bind("<Return>", self.start_search)
 
     def create_options_widgets(self, parent):
-        options_frame = ttk.LabelFrame(parent, text="検索オプション", padding=10)
+        options_frame = ttk.LabelFrame(parent, text=translations[self.language]['search_options'], padding=10)
         options_frame.pack(fill=X, pady=5)
         type_frame = ttk.Frame(options_frame)
         type_frame.pack(side=LEFT, fill=X, expand=True)
         self.type_var = tk.StringVar(value="all")
-        ttk.Radiobutton(type_frame, text="すべて", value="all", variable=self.type_var, bootstyle="outline-toolbutton").pack(side=LEFT, padx=(0,5), expand=True, fill=X)
-        ttk.Radiobutton(type_frame, text="ファイルのみ", value="f", variable=self.type_var, bootstyle="outline-toolbutton").pack(side=LEFT, padx=5, expand=True, fill=X)
-        ttk.Radiobutton(type_frame, text="ディレクトリのみ", value="d", variable=self.type_var, bootstyle="outline-toolbutton").pack(side=LEFT, padx=5, expand=True, fill=X)
+        ttk.Radiobutton(type_frame, text=translations[self.language]['all'], value="all", variable=self.type_var, bootstyle="outline-toolbutton").pack(side=LEFT, padx=(0,5), expand=True, fill=X)
+        ttk.Radiobutton(type_frame, text=translations[self.language]['file_only'], value="f", variable=self.type_var, bootstyle="outline-toolbutton").pack(side=LEFT, padx=5, expand=True, fill=X)
+        ttk.Radiobutton(type_frame, text=translations[self.language]['dir_only'], value="d", variable=self.type_var, bootstyle="outline-toolbutton").pack(side=LEFT, padx=5, expand=True, fill=X)
         check_frame = ttk.Frame(options_frame)
         check_frame.pack(side=LEFT, padx=(20,0))
         self.include_hidden_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(check_frame, text="隠しファイル", variable=self.include_hidden_var, bootstyle="round-toggle").pack(side=LEFT, padx=10)
+        ttk.Checkbutton(check_frame, text=translations[self.language]['hidden'], variable=self.include_hidden_var, bootstyle="round-toggle").pack(side=LEFT, padx=10)
         self.case_sensitive_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(check_frame, text="大文字/小文字を区別", variable=self.case_sensitive_var, bootstyle="round-toggle").pack(side=LEFT, padx=10)
+        ttk.Checkbutton(check_frame, text=translations[self.language]['case_sensitive'], variable=self.case_sensitive_var, bootstyle="round-toggle").pack(side=LEFT, padx=10)
 
     def create_results_widgets(self, parent):
-        result_frame = ttk.LabelFrame(parent, text="検索結果", padding=10)
+        result_frame = ttk.LabelFrame(parent, text=translations[self.language]['search_results'], padding=10)
         result_frame.pack(fill=BOTH, expand=True)
 
         filter_frame = ttk.Frame(result_frame)
         filter_frame.pack(fill=X, pady=(0, 5))
-        ttk.Label(filter_frame, text="あいまい検索で絞り込み:").pack(side=LEFT, padx=(0,5))
+        ttk.Label(filter_frame, text=translations[self.language]['fuzzy_filter']).pack(side=LEFT, padx=(0,5))
         self.filter_var = tk.StringVar()
         self.filter_entry = ttk.Entry(filter_frame, textvariable=self.filter_var)
         self.filter_entry.pack(fill=X, expand=True)
@@ -286,20 +386,20 @@ class FdSearchApp(ttk.Window):
             self.displayed_results = [item for item in self.all_results if self.fuzzy_match(query, item[1])]
 
         if not self.displayed_results:
-            self.result_listbox.insert("end", "（検索結果なし）")
-            self.status_var.set(f"✅ 絞り込みの結果、0件です")
+            self.result_listbox.insert("end", translations[self.language]['status_no_results'])
+            self.status_var.set(f"{translations[self.language]['status_done']} 0")
         else:
             relative_paths = [item[1] for item in self.displayed_results]
             self.result_listbox.insert("end", *relative_paths)
             if not query:
-                 self.status_var.set(f"✅ 全 {len(self.all_results)} 件を表示中 (Enterで絞り込み)")
+                self.status_var.set(f"{translations[self.language]['status_done']} {len(self.all_results)}")
             else:
-                 self.status_var.set(f"✅ {len(self.displayed_results)} 件に絞り込みました (Enterで再度絞り込み)")
+                self.status_var.set(f"{translations[self.language]['status_done']} {len(self.displayed_results)}")
 
     def create_statusbar(self):
         status_frame = ttk.Frame(self, padding=(5, 2))
         status_frame.pack(side=BOTTOM, fill=X)
-        self.status_var = tk.StringVar(value="フォルダとキーワードを入力してください")
+        self.status_var = tk.StringVar(value=translations[self.language]['status_ready'])
         self.status_label = ttk.Label(status_frame, textvariable=self.status_var)
         self.status_label.pack(side=LEFT)
         right_frame = ttk.Frame(status_frame)
@@ -316,6 +416,14 @@ class FdSearchApp(ttk.Window):
         select_bg = self.style.colors.selectbg
         self.result_listbox.config(selectbackground=select_bg)
 
+    def change_language(self, lang_code: str):
+        if lang_code not in translations:
+            return
+        for key, value in translations[lang_code].items():
+            if hasattr(self, key):
+                getattr(self, key).set(value)
+        self.apply_settings(self.load_settings())
+
     def start_search(self, event=None):
         if self.search_button["state"] == "disabled": return
 
@@ -323,9 +431,9 @@ class FdSearchApp(ttk.Window):
             messagebox.showerror("エラー", "指定された検索フォルダは存在しません。")
             return
 
-        self.history_menu.entryconfig("現在の検索結果を保存", state="disabled")
-        self.search_button.config(state=DISABLED, text="検索中...")
-        self.status_var.set("🔍 検索中...")
+        self.history_menu.entryconfig(self.save_history_index, state="disabled")
+        self.search_button.config(state=DISABLED, text=translations[self.language]['status_searching'])
+        self.status_var.set(translations[self.language]['status_searching'])
         self.found_count_var.set("")
         self.time_var.set("")
 
@@ -415,17 +523,17 @@ class FdSearchApp(ttk.Window):
         self.displayed_results = self.all_results[:]
         elapsed_time = time.time() - self.search_start_time
         if self.found_count == 0:
-            self.result_listbox.insert("end", "一致するファイルは見つかりませんでした。")
-            self.status_var.set("✅ 検索完了")
-            self.history_menu.entryconfig("現在の検索結果を保存", state="disabled")
+            self.result_listbox.insert("end", translations[self.language]['status_no_results'])
+            self.status_var.set(translations[self.language]['status_done'])
+            self.history_menu.entryconfig(self.save_history_index, state="disabled")
         else:
-            self.status_var.set(f"✅ 検索完了 (Enterで結果を絞り込めます)")
-            self.history_menu.entryconfig("現在の検索結果を保存", state="normal")
+            self.status_var.set(f"{translations[self.language]['status_done']} (Enterで結果を絞り込めます)")
+            self.history_menu.entryconfig(self.save_history_index, state="normal")
 
         self.found_count_var.set(f"{self.found_count} 件")
         self.time_var.set(f"({elapsed_time:.2f}秒)")
         self.on_keyword_change()
-        self.search_button.config(text="検索開始")
+        self.search_button.config(text=translations[self.language]['start_search'])
         self.change_theme(self.style.theme.name)
         if self.found_count > 0:
              self.filter_entry.focus_set()
@@ -436,7 +544,7 @@ class FdSearchApp(ttk.Window):
         self.found_count_var.set("")
         self.time_var.set("")
         self.on_keyword_change()
-        self.search_button.config(text="検索開始")
+        self.search_button.config(text=translations[self.language]['start_search'])
 
     def on_keyword_change(self, *args):
         folder_exists = self.folder_var.get()
